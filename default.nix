@@ -126,12 +126,14 @@ in rec {
   mkNodeModules = { src, extraEnvVars ? {} }:
     let
       localDeps = map dirOfLocal (builtins.filter isLocal (builtins.attrValues (lock.dependencies)));
+
+      origSrc = if src ? _isLibCleanSourceWith then src.origSrc else src;
+      getRelativePath = path: removePrefix (toString origSrc + "/") path;
+
       # filter out everything except package.json and package-lock.json if possible
       # allows to avoid rebuilding node_modules if these two files didn't change
       filteredSrc =
         let
-          origSrc = if src ? _isLibCleanSourceWith then src.origSrc else src;
-          getRelativePath = path: removePrefix (toString origSrc + "/") path;
           usedPaths = [ "package.json" "package-lock.json" ]
             ++ localDeps;
           dirOfRec = x: if dirOf x == "." || dirOf x == "/" then [x] else ([x] ++ dirOfRec (dirOf x));
@@ -142,9 +144,14 @@ in rec {
           };
         in if canCleanSource src then cleanedSource else src;
 
+      metaSrc = cleanSourceWith {
+        src = src;
+        filter = path: type: elem (getRelativePath path) [ "package.json" "package-lock.json" ];
+      };
 
-      packageJson = src + "/package.json";
-      packageLockJson = src + "/package-lock.json";
+      packageJson = metaSrc + "/package.json";
+      packageLockJson = metaSrc + "/package-lock.json";
+
       info = fromJSON (readFile packageJson);
       lock = fromJSON (readFile packageLockJson);
     in stdenv.mkDerivation ({
